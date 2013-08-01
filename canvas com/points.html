@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Leap</title>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+<script type="application/javascript" src="leap.js"></script>
+<script src="com.js"></script>
+
+</head>
+
+<body>
+<div id="add">Add rect</div>
+<div id="remove">Remove rect</div>
+<div id="debug">
+ciao
+</div>
+<canvas id="canvas" width="900" height="600"></canvas>
+<script>
+
+function pagecenter(){
+	w=$(window).width();
+	h=$(window).height();
+	
+	arr={
+	x:w/2,
+	y:h/2	
+	}
+	return arr;
+}
+/*
+myListener = new Leap.Listener();
+console.log(myListener);
+			myListener.onFrame = function(controller){
+				
+				if(controller.frame().pointables().count()){
+
+				if(myController._screens.count()){
+					origin=myController._screens[0]._origin;
+					center=myController._screens[0]._center;
+					wl=center.x-origin.x;
+					hl=center.y-origin.y;
+					x=controller.frame().pointables()[0].tipPosition().x+wl;
+					y=controller.frame().pointables()[0].tipPosition().y+hl;
+					console.log(y);
+					$('#move').css({'left':x*pagecenter().x/wl,'top':pagecenter().y*2-y*(1-pagecenter().y/hl)});
+				}
+				}
+			};
+			// Create a controller to connect to the Leap Motion
+			myController = new Leap.Controller("ws://localhost:6437/");
+
+			// Add the listener to the controller
+			myController.addListener(myListener);
+			$(function(){
+	Leap.Calibrate(myController);
+});*/
+$('#play, #stop').on('click',function(){
+	$('#play, #stop').removeClass();
+	$(this).addClass('selected');
+});
+
+//Globalize
+
+
+$(function(){
+	//Start the application manager
+	COM.init('canvas');
+	//gloabal for the moment
+	//Draw per second
+	var c=COM.get;
+	DPS=60;
+	$('#remove').on('click',function(){
+		COM.remove_obj('rettangolo');
+	});
+	$('#add').on('click',function(){
+		COM.add_obj('rettangolo','rect',{});
+	});
+	
+	COM.bind('draw',function(frame){
+		if( frame.fingers.length == 1 ){
+			COM.get('point').color="rgb(200,0,0)"
+
+			dpiw=$(window).width();
+			dpih=$(window).height();
+			offsety=50
+			//x=frame.hands[0].palmPosition[0];
+			//y=frame.hands[0].palmPosition[1];
+			scalefactor=4/1000
+			/*text='1:'+x+'<br/>';
+			text+='2:'+y+'<br/>';
+		    text+='3:'+frame.hands[0].palmPosition[2]+'<br/>';
+			text+='i'+0+'<br>';
+			$('#debug').html(text);*/
+			y=COM.pointer.fingers[0].y;
+			
+			x=COM.pointer.fingers[0].x;
+			COM.get('point').left=x;
+			COM.get('point').top=y;
+		}
+	});
+	COM.add_component('rect',{
+		handlers:{},
+		rotation:0,
+		left:0,
+		top:0,
+		width:100,
+		height:100,
+		current:"",
+		color:"rgb(200,50,0)",
+		init:function(){
+			
+		},
+		draw:function(ctx){
+			
+			ctx.rotate(this.rotation*Math.PI/180);
+			ctx.fillStyle = this.color;
+			ctx.fillRect (this.left, this.top, this.width, this.height);
+		},
+		bind:function(event,callback){
+			if (!this.handlers[event]) this.handlers[event] = {};
+			var hd = this.handlers[event];
+			
+			if (!hd[this[0]]) hd[this[0]] = [];
+				hd[this[0]].push(callback); 
+			return this;
+		},
+		unbind:function(event){
+			if (this.handlers[event]) delete this.handlers[event];
+			return this;
+		},
+		trigger:function(event, data){
+			if(this.handlers[event] && this.handlers[event][this[0]]){
+				var callbacks = this.handlers[event][this[0]];
+				for (var i=0; i < callbacks.length; i++) {
+    				callbacks[i].call(this, data);
+				}
+			}
+			return this;
+		},
+		on:function(event,callback){
+			switch(event){
+				case 'hover':
+					COM.on(this,'hover',callback);
+				break;
+				case 'escked':
+					COM.on(this,'escked',callback);
+				break;
+			}
+		}
+	});
+	COM.bind('start',function(){
+		previousTimestamp=new Date().getTime();
+		var self=this;
+		this.add_obj('rettangolo','rect',{});
+		this.add_obj('point','rect',{width:10,height:10,color:"rgb(0,0,0)"});
+		self.each(function(obj){
+			obj.init();
+		});
+		COM.get('rettangolo').on('hover',function(data){
+			data.o.color="rgb(0,0,0)";
+		});
+		COM.get('rettangolo').on('escked',function(data){
+			console.log('escked');
+			data.o.color="rgb(200,50,0)";
+		});
+	});
+	COM.trigger('start');
+	
+Leap.loop( function(frame,done){
+	COM.pointer.init(frame);
+		
+	if(((new Date().getTime()-previousTimestamp)/1000)>1/DPS){
+		COM.draw();
+		COM.trigger('draw',frame);
+		previousTimestamp=new Date().getTime();
+	}
+	previousFrame = frame;
+	COM.trigger('EnterFrame',frame)
+	done();
+});
+});
+
+</script>
+</body>
+</html>

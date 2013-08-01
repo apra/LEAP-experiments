@@ -1,0 +1,702 @@
+<html>
+<head>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+<script src="three.js"></script>
+<script src="leap.js"></script>
+<style>
+
+canvas{background-color: black;
+position: fixed;
+left: 0px;
+top: 0px;
+}
+</style>
+<script>
+//See: http://stackoverflow.com/questions/4492678/to-swap-rows-with-columns-of-matrix-in-javascript-or-jquery
+Array.prototype.transpose = function() {
+  // Calculate the width and height of the Array
+  var a = this,
+    w = a.length ? a.length : 0,
+    h = a[0] instanceof Array ? a[0].length : 0;
+  // In case it is a zero matrix, no transpose routine needed.
+  if(h === 0 || w === 0) { return []; }
+  /**
+   * @var {Number} i Counter
+   * @var {Number} j Counter
+   * @var {Array} t Transposed data is stored in this array.
+   */
+  var i, j, t = [];
+  // Loop through every item in the outer array (height)
+  for(i=0; i<h; i++) {
+    // Insert a new row (array)
+    t[i] = [];
+    // Loop through every item per item in outer array (width)
+    for(j=0; j<w; j++) {
+      // Save transposed data.
+      t[i][j] = a[j][i];
+    }
+  }
+  return t;
+};
+Array.prototype.is_matrix=function(){
+	var arr=this;
+	return (arr[0].length>0)?true:false;
+}
+var assert=function(value,msg){
+	if ( !value ){
+	console.error(msg || (value + " does not equal true"));
+	return false;}else{return true;}
+}
+var HMM=function(opts){
+	//constants
+	this.rawdata={};
+	this.tempcheck={};
+	this.v=['vS','vSE','vE','vNE','vN','vNO','vO','vSO','hN','hS','hE','hO','hNE','hNO','hSE','hSO'];
+	
+	//Defaults, mainly for the first test
+	this.N=8;
+	this.M=8;
+	this.a=[];
+	this.b=[];
+	this.pigreco=[];
+	//PIGRECO
+	for(var i=0;i<this.N;i++){
+		this.pigreco[i]=(1)/this.N;
+	}
+	//A
+	for(var i=0;i<this.N;i++){
+		this.a[i]=[];
+		for(var j=0;j<this.N;j++){
+			this.a[i][j]=0;
+		}
+	}
+	for(var i=0;i<2;i++){
+		for(var j=0;j<(this.N-1);j++){
+			if(i==0){this.a[j][j]=0.5}else{
+			this.a[j][j+1]=0.5
+			}
+		}
+	}
+	this.a[this.N-1][this.N-1]=1;
+	
+	console.log(this.a);
+	//B
+	for(var i=0;i<this.N;i++){
+		this.b[i]=[];
+		for(var j=0;j<this.M;j++){
+			this.b[i][j]=0.1/(this.M-2);
+		}
+	}
+	this.b[0][0]=0.1;this.b[0][1]=0.8;
+	this.b[1][1]=0.3;this.b[1][2]=0.6;
+	this.b[2][2]=0.2;this.b[2][3]=0.7;
+	this.b[3][3]=0.5;this.b[3][4]=0.4;
+	this.b[4][4]=0.4;this.b[4][5]=0.5;
+	this.b[5][5]=0.5;this.b[5][6]=0.4;
+	this.b[6][6]=0.3;this.b[6][7]=0.6;
+	this.b[7][7]=0.2;this.b[7][0]=0.7;
+
+	//Opts for training or user defined
+	this.a=(opts)?opts.a:this.a;
+	this.b=(opts)?opts.b:this.b;
+	this.pigreco=(opts)?opts.pigreco:this.pigreco;
+	this.N=(opts)?opts.N:this.N;
+	this.M=(opts)?opts.M:this.M;
+	
+	
+	//s=States, number of states defined by user in N, needed
+	this.s=[];
+	console.log(this.N);
+	if(assert(this.N)){for(var i=0;i<this.N;i++){this.s[i]=i}}
+	this.o=[];	
+}
+HMM.prototype.fww=function(){
+	/*
+	bi(Ot)=this.b[this.v.indexOf(this.o[t])][i]
+	*/
+	//ALPHA
+	this.alpha=[];
+	for(var i=0;i<this.N;i++){
+		this.alpha[i]=[this.pigreco[i]*this.b[i][this.v.indexOf(this.o[0])]];
+	}
+	for(var t=1;t<this.o.length;t++){
+		for(var j=0;j<this.N;j++){
+			this.alpha[j][t]=0;
+			for(var i=0;i<this.N;i++){
+				this.alpha[j][t]+=this.alpha[i][t-1]*this.a[i][j]
+			}
+			switch(this.o[t]){
+				case 'fO':case 'bO':case 'hO':
+				this.o[t]='vO';
+				break;
+				case 'fE':case 'bE':case 'hE':
+				this.o[t]='vE';
+				break;
+			}
+			this.alpha[j][t]=this.alpha[j][t]*this.b[j][this.v.indexOf(this.o[t])]
+		}
+	}
+	//BETA
+	this.beta=[];
+	for(var i=0;i<this.N;i++){
+		this.beta[i]=[];
+		this.beta[i][this.o.length-1]=1;
+	}
+	
+	for(var t=(this.o.length-2);t>=0;t--){
+	for(var i=0;i<this.N;i++){
+		this.beta[i][t]=0;
+			for(var j=0;j<this.N;j++){
+				this.beta[i][t]+=this.a[i][j]*this.b[j][this.v.indexOf(this.o[t+1])]*this.beta[j][t+1]
+			}
+		}
+	}
+	//GAMMA
+	this.gamma=[]
+	for(var i=0;i<this.N;i++){
+		this.gamma[i]=[];
+	}
+	
+	for(var i=0;i<this.N;i++){
+		for(var t=0;t<this.o.length;t++){
+			this.gamma[i][t]=0;
+				for(var mi=0;mi<this.N;mi++){
+					this.gamma[i][t]+=this.alpha[mi][t]*this.beta[mi][t]
+				}
+			this.gamma[i][t]=(this.alpha[i][t]*this.beta[i][t])/this.gamma[i][t]
+		}
+	}
+	//XI
+	this.xi=[];
+	for(var i=0;i<this.N;i++){	
+		this.xi[i]=[]
+		for(var j=0;j<this.N;j++){
+			this.xi[i][j]=[]
+			for(var t=0;t<(this.o.length-1);t++){
+				this.xi[i][j][t]=0;
+				for(var mi=0;mi<this.N;mi++){
+					for(var mj=0;mj<this.N;mj++){
+						this.xi[i][j][t]+=this.alpha[mi][t]*this.a[mi][mj]*this.b[mj][this.v.indexOf(this.o[t+1])]*this.beta[mj][t+1]
+					}
+				}
+				this.xi[i][j][t]=(this.alpha[i][t]*this.a[i][j]*this.b[j][this.v.indexOf(this.o[t+1])]*this.beta[j][t+1])/this.xi[i][j][t]
+			}
+		}
+	}
+	//Get new transition matrixes
+	this.newa=[]
+	var label=[];
+	label[0]=[];label[0][0]='    ';
+	label[1]=[];
+	for(var i=0;i<this.N;i++){
+		this.newa[i]=[]
+		
+		for(var j=0;j<this.N;j++){
+			var denom=0;
+			this.newa[i][j]=0;
+			label[0][j+1]=this.v[j]+'   ';
+			label[1][j]=this.v[j]+'  ';
+			for(var t=0;t<(this.o.length-1);t++){
+				this.newa[i][j]+=this.xi[i][j][t]
+				denom+=this.gamma[i][t]
+			}
+			console.log('newa:'+this.newa[i][j]+' denom:'+denom);
+			this.newa[i][j]=(this.newa[i][j]/denom);
+		}
+	}
+	console.log(debug_matrix(this.newa));
+	this.newb=[];
+	for(var j=0;j<this.N;j++){
+		this.newb[j]=[];
+		for(var k=0;k<this.M;k++){
+			this.newb[j][k]=0;
+			var denom=0;
+				for(var t=0;t<this.o.length;t++){
+					if(this.o[t]==this.v[k]){
+						this.newb[j][k]+=this.gamma[j][t];
+					}
+					denom+=this.gamma[j][t]
+				}
+			this.newb[j][k]=(this.newb[j][k]/denom);
+		}
+	}
+	console.log(debug_matrix(this.newb));
+	for(var i=0;i<this.N;i++){
+		this.pigreco[i]=this.gamma[i][0];
+	}
+	console.log(this.pigreco);
+	console.group('Control sums');
+	console.group('a');
+	for(var i=0;i<this.N;i++){
+		var somma=0;
+		for(var j=0;j<this.N;j++){
+			somma+=this.newa[i][j];
+		}
+		console.log('Stato:'+i+' Somma:'+somma)
+	}
+	console.groupEnd();
+	console.group('b');
+	for(var i=0;i<this.N;i++){
+		var somma=0;
+		for(var k=0;k<this.M;k++){
+			somma+=this.newb[i][k];
+		}
+		console.log('Stato:'+i+' Somma:'+somma)
+	}
+	console.groupEnd()
+	var somma=0;
+	for(var i=0;i<this.N;i++){
+		somma+=this.pigreco[i];
+	}
+	console.log(somma);
+	console.groupEnd();
+}
+//matrix=matrix to show
+//row=row/column inverted
+function debug_matrix(matrix,row,label){
+	var string="";
+	(row)?matrix.transpose():matrix;
+	w = matrix.length ? matrix.length : 0,
+    h = matrix[0] instanceof Array ? matrix[0].length : 0;
+	if(!label){
+		var label=[];	
+		label[0]=[];label[1]=[];
+		label[0][0]='     ';
+		for(var i=1;i<(w+1);i++)
+			label[0][i]=(i-1)+'    ';
+		for(var i=0;i<h;i++)
+			label[1][i]=i+'    ';
+	}
+	if(matrix.is_matrix()){
+		for(var i=0;i<w;i++){
+			if(i==0){
+				for(var j=0;j<(matrix[i].length+1);j++){
+					string+=label[0][j]+'|'
+				}
+				string+="\n";
+			}
+			string+=label[1][i]+'|'
+			for(var j=0;j<h;j++){
+				
+				string+=matrix[i][j].toFixed(3)+'|'
+			}
+			string+='\n'
+		}
+	}
+	return string;
+}
+function somma_arr(arr){
+	if(arr[0]>=0){
+		var s=0;
+		for(var i=0;i<arr.length;i++){
+			s+=arr[i]
+		}
+	return s;
+	}else{
+		return 'NO'+arr[0];
+	}
+}
+HMM.prototype.update=function(){
+	this.N=this.s.length;
+	this.M=this.M.length;
+}
+HMM.prototype.train=function(data){
+	this.rawdata=this.purgeData(data,1)
+	this.o=this.getOrientation(this.rawdata);
+	for(var i=0;i<this.o.length;i++){
+		this.o[i]=this.apprDirection(this.o[i])
+	}
+	this.o=this.normalizeSerie(this.o,3);
+	this.s=this.clusterDirection(this.o,this.N);
+	this.fww();
+	console.log(this.o);
+	console.log(this.s);
+}
+HMM.prototype.clusterDirection=function(data,n){
+	var array=[];
+	var step=[];
+	for(var i=0;i<=n;i++){
+		step[i]=Math.floor(data.length/n);
+	}
+	if(data.length%n>0){
+		for(var i=0;i<data.length%n;i++){
+			step[i]++;
+		}
+	}
+	var e=0;
+	var prevstep=0;
+	var q;
+	for(var i=step[e];i<=data.length;i=i+step[e]){
+		q=0;
+		array[e]=[];
+		for(var o=prevstep;o<i;o++){
+			array[e][q]=data[o];
+			q++
+		}
+		prevstep=i;
+		e++
+	}
+	return array;
+}
+HMM.prototype.normalizeSerie=function(data,n){
+	//c count how many items are equal to each other
+	c=1;
+	for(var i=1;i<data.length;i++){
+		if(data[i]==data[i-1]){
+			c++
+		}else{
+			if(c<=n){
+				for(var a=(i-1);a>=(i-c);a--){
+					data[a]=data[i];
+				}
+				i=i-c
+			}
+			c=1;
+		}
+	}
+	return data;
+}
+HMM.prototype.getOrientation=function(data){
+	var array=[];
+	for(var i=1;i<data.length-1;i++){
+		//console.log('y:'+(data[i+1].y-data[i-1].y));
+		//console.log('x:'+(data[i+1].x-data[i-1].x));
+		//array[i-1]={'v':180*Math.atan((data[i-1].y-data[i].y)/(data[i-1].x-data[i].x))/Math.PI,'h':180*Math.atan((data[i-1].z-data[i].z)/(data[i].x-data[i-1].x))/Math.PI};
+		array[i-1]={'v':180*Math.atan((data[i+1].y-data[i-1].y)/(data[i+1].x-data[i-1].x))/Math.PI,'w':180*Math.atan((data[i+1].y-data[i-1].y)/(data[i+1].z-data[i-1].z))/Math.PI,'h':180*Math.atan((data[i+1].z-data[i-1].z)/(data[i+1].x-data[i-1].x))/Math.PI,'dx':(data[i+1].x-data[i-1].x),'dy':(data[i+1].y-data[i-1].y),'dz':(data[i+1].z-data[i-1].z)};
+		this.tempcheck[i-1]={'v':180*Math.atan((data[i+1].y-data[i-1].y)/(data[i+1].x-data[i-1].x))/Math.PI,'w':180*Math.atan((data[i+1].y-data[i-1].y)/(data[i+1].z-data[i-1].z))/Math.PI,'h':180*Math.atan((data[i+1].z-data[i-1].z)/(data[i+1].x-data[i-1].x))/Math.PI,'dx':(data[i+1].x-data[i-1].x),'dy':(data[i+1].y-data[i-1].y),'dz':(data[i+1].z-data[i-1].z)};
+	}
+	return array;
+}
+HMM.prototype.purgeData=function(data,delta){
+	//Remove all points that are closer than delta pixel
+	var flag=true
+	var delta=delta||0.05;
+	while(flag){
+		flag=false;	
+		for(var i=1;i<data.length;i++){
+			//Pythagorean Theorem 3D
+			d=Math.sqrt(Math.pow(data[i].x-data[i-1].x,2)+Math.pow(data[i].y-data[i-1].y,2)+Math.pow(data[i].z-data[i-1].z,2));
+			//d1=Math.sqrt(data[i-1].x*data[i-1].x+data[i-1].y*data[i-1].y+data[i-1].z*data[i-1].z);
+			//d=data[i].length()-data[i-1].length();
+			
+			if(Math.abs(d)<delta){
+				flag=true;
+				data.splice(i,1);
+			}
+		}
+	}
+	return data;
+}
+//Must be a degree value, and the array has to have vertical and horizzontal degree
+HMM.prototype.apprDirection=function(data){
+	//console.log('W:'+data.w+'V:'+data.v);
+	//data.v vertical data.h horizzontal
+	//Dictionary
+	dictionary={
+			'v':{
+				'N':[90,0,2,1,2],
+				'S':[90,0,2,0,2],
+				'E':[0,0,1,2,2],
+				'O':[0,0,0,2,2],
+				'NE':[45,0,1,1,2],
+				'NO':[-45,0,0,1,2],
+				'SE':[-45,0,1,0,2],
+				'SO':[45,0,0,0,2]
+			},
+			'h':{
+				'N':[90,0,2,2,1],
+				'S':[90,0,2,2,0],
+				'E':[0,0,1,2,2],
+				'O':[0,0,0,2,2],
+				'NE':[45,0,1,2,1],
+				'NO':[-45,0,0,2,1],
+				'SE':[-45,0,1,2,0],
+				'SO':[45,0,0,2,0]
+			},
+			'b':{
+				'N':[90,-45,2,1,1],
+				'S':[90,45,2,0,0],
+				'E':[0,45,1,2,2],
+				'O':[0,45,0,2,2],
+				'NE':[45,45,1,2,1],
+				'NO':[-45,45,0,2,1],
+				'SE':[-45,45,1,2,0],
+				'SO':[45,45,0,2,0]
+			},
+			'f':{
+				'N':[90,45,2,1,1],
+				'S':[90,-45,2,0,0],
+				'E':[0,-45,1,2,2],
+				'O':[0,-45,0,2,2],
+				'NE':[45,-45,1,2,0],
+				'NO':[-45,-45,0,2,0],
+				'SE':[-45,-45,1,2,1],
+				'SO':[45,-45,0,2,1]
+			}
+		}
+		var scaro=22.5
+		var approssimato;
+		for(var i in dictionary){
+			
+				for(var e in dictionary[i]){
+						var goon=false;
+					switch(i){
+						case 'v':
+							if(Math.abs(data.dy-data.dz)>=1||Math.abs(data.dx)>=9){
+								if(is_near(data.v,dictionary[i][e][0],scaro)){
+									goon=true;
+								}
+							}
+						break;
+						case 'h':
+							if(Math.abs(data.dy)<=2){
+								if(is_near(data.w,0,scaro)){
+									goon=true;
+								}
+							}
+						break;
+						case 'b':
+								if(is_near(data.v,dictionary[i][e][0],scaro)&&is_near(data.w,dictionary[i][e][1],scaro)){
+									goon=true;
+								}
+						break;
+						case 'f':
+								if(is_near(data.v,dictionary[i][e][0],scaro)&&is_near(data.w,dictionary[i][e][1],scaro)){
+									goon=true;
+								}
+						break;
+					}		
+				
+					//X
+					if(goon){
+						goon=false
+						switch(dictionary[i][e][2]){
+							case 0: (data.dx<=1)?goon=true:goon;break;
+							case 1:	(data.dx>=1)?goon=true:goon;break;
+							case 2:	goon=true; break;
+						}
+					}
+					//Y
+					if(goon){
+						goon=false
+							switch(dictionary[i][e][3]){
+								case 0: (data.dy<=1)?goon=true:goon;break;
+								case 1:	(data.dy>=1)?goon=true:goon;break;
+								case 2:	goon=true;break;
+								
+							}
+						}
+					//Z
+					if(goon){
+						goon=false
+							switch(dictionary[i][e][4]){
+								case 0: (data.dz<=1)?goon=true:goon;break;
+								case 1:	(data.dz>=1)?goon=true:goon;break;
+								case 2:	goon=true;break;
+								
+							}
+						}
+					if(goon){
+						approssimato=i+''+e;
+						//console.log(data.h+'Dire: '+e);
+					}else{
+						if(Math.abs(data.dy)<1&&Math.abs(data.dz)<1){
+							if(data.dx>0){
+								approssimato='vE'
+							}else{
+								approssimato='vO';
+							}
+						}
+					}
+			}	
+				
+		}
+		return approssimato;
+}
+function get_max(arr){
+	var maxx=0;
+	for(var i=0;i<arr.length;i++){
+		if(maxx<arr[i]){
+			maxx=arr[i]
+		}
+	}
+	return maxx;
+}
+HMM.prototype.mean=function(data){
+	var sum=0;
+	for(var i=0;i<data.length;i++){
+		sum+=data[i];
+	}
+	return sum/data.length;
+}
+var scene;
+var renderer;
+var camera,t=0;
+//Global O (observations)
+var og=[];
+var recording=false;
+	var init = function(){
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.10, 1000);
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement); 
+      camera.position.z = 200;
+      camera.position.y = 200;
+	  camera.position.x= 500;
+      camera.lookAt(new THREE.Vector3(0,120,0));
+	  //To use enter the axis length
+		debugaxis(1000);
+      var fingers = {};
+	  var hands = {};
+      var spheres = {};
+	  var preframe;
+      Leap.loop(function(frame) {
+	  
+        var fingerIds = {};
+        var handIds = {};
+		for(var i=0; i<frame.hands.length;i++){
+			var prehand = frame.hands[i];
+			var hand = hands[prehand.id];
+			
+			var pos=prehand.palmPosition;
+			var dir=prehand.direction;
+			
+			var origin = new THREE.Vector3(pos[0], pos[1], -pos[2]);
+          	var direction = new THREE.Vector3(dir[0], dir[1], -dir[2]);
+			
+			if(!hand){
+				hand=new THREE.ArrowHelper(origin, direction, 40, Math.random() * 0x808080 + 0x808080);
+				hands[prehand.id]=hand;
+				scene.add(hand);
+			}
+			
+			if(recording===true){
+				og[t++]=origin;
+			}
+				
+			hand.position=origin;
+			hand.setDirection(direction);
+			handIds[prehand.id]=true;
+		}
+		for (handId in hands) {
+          if (!handIds[handId]) {
+            scene.remove(hands[handId]);
+            delete hands[handId];
+          }
+        }
+		
+        /*for (var index = 0; index < frame.pointables.length; index++) {
+		
+          var pointable = frame.pointables[index];
+          var finger = fingers[pointable.id];
+		  
+		  var pos = pointable.tipPosition;
+		  var dir = pointable.direction;
+		  
+          var origin = new THREE.Vector3(pos.x, pos.y, -pos.z);
+          var direction = new THREE.Vector3(dir.x, dir.y, -dir.z);
+		 
+          if (!finger) {
+			finger=new THREE.ArrowHelper(origin, direction, 40, Math.random() * 0x808080 + 0x808080);
+            fingers[pointable.id] = finger;
+            scene.add(finger);
+          }
+		  
+          finger.position = origin;
+          finger.setDirection(direction);
+		  
+		  fingerIds[pointable.id] = true;
+        }
+
+        for (fingerId in fingers) {
+          if (!fingerIds[fingerId]) {
+            scene.remove(fingers[fingerId]);
+            delete fingers[fingerId];
+          }
+        }*/
+        
+		renderer.render(scene, camera);
+		preframe=frame;
+      });
+	};
+	$(function(){
+		var rotation=0;
+		var circle = new HMM();
+	$('#start').on('click',function(){
+		if(!recording){
+			recording=true;
+			$(this).text('STOP');
+		}else{
+			recording=false;
+			$(this).text('START');
+
+		circle.train(og);
+		var material = new THREE.LineBasicMaterial({color: 0xffffff});
+		var geometry = new THREE.Geometry();
+		
+		for(var i=0;i<circle.rawdata.length;i++){
+	   		geometry.vertices.push(circle.rawdata[i]);
+		}
+		for(var i=0;i<circle.o.length;i++){
+			if(circle.o[i]==undefined){
+				circle.o[i]=circle.tempcheck[i];
+			}
+		}
+		var line = new THREE.Line(geometry, material);
+		scene.add(line);
+		renderer.render(scene, camera);
+		og=[]
+		t=0
+		}
+	});
+	$('#rotate').on('click',function(){
+		rotation += 0.1;
+		camera.position.x = Math.sin(rotation)*500;
+		camera.position.y = 200;
+		camera.position.z = Math.sin(rotation)*500;
+		camera.lookAt(new THREE.Vector3(0,200,0));
+	});
+	});
+	function is_near(curr,ideal,span){
+		if(ideal==90){
+			if(curr<=90&&curr>=0){
+				if((ideal-span)<=curr){	return true;}else{return false;	}
+			}else if(curr>=-90&&curr<=0){
+				if((span-ideal)>=curr){return true;}else{return false;}
+			}
+		}else{
+			if((ideal-span)<=curr&&(ideal+span)>=curr){
+				return true;
+			}else{
+				return false;
+			}
+		}
+	}
+	var debugaxis = function(axisLength){
+    //Shorten the vertex function
+    function v(x,y,z){ 
+            return new THREE.Vertex(new THREE.Vector3(x,y,z)); 
+    }
+    
+    //Create axis (point1, point2, colour)
+    function createAxis(p1, p2, color){
+            var line, lineGeometry = new THREE.Geometry(),
+            lineMat = new THREE.LineBasicMaterial({color: color, lineWidth: 1});
+            lineGeometry.vertices.push(p1, p2);
+            line = new THREE.Line(lineGeometry, lineMat);
+            scene.add(line);
+    }
+    
+    createAxis(v(-axisLength, 0, 0), v(axisLength, 0, 0), 0xFF0000);
+    createAxis(v(0, -axisLength, 0), v(0, axisLength, 0), 0x00FF00);
+    createAxis(v(0, 0, -axisLength), v(0, 0, axisLength), 0x0000FF);
+};
+</script>
+</head>
+<body onLoad="setTimeout(init, 100);">
+<canvas width="1280" height="923" style="width: 1280px; height: 923px;"></canvas>
+<div id="start" style="position:fixed;z-index:2;top:0;color:white;left:0">START</div>
+<div id="rotate" style="position:fixed;z-index:2;top:20;color:white;left:0">ROTATE</div>
+</body>
+</html>

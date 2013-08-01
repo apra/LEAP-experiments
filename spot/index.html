@@ -1,0 +1,181 @@
+<html>
+<head>
+<title>Find the spot</title>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+<script type="application/javascript" src="leap.js"></script>jquery.svg.js
+<script type="application/javascript" src="jquery.svg.js"></script>
+</head>
+<body>
+<div id="output"></div>
+<script>
+
+handlers={}
+pointer={
+	offsety:150,
+	scalefactor:6/1000,
+	hands:{},
+	fingers:{},
+	init:function(frame){
+		//console.group('Pointer');
+		this.w=$(window).width()
+		this.h=$(window).height()
+		this.handup(frame);
+		this.fingerup(frame);
+		this.trigger('PInit');
+		//console.groupEnd();
+	},
+	handup:function(frame){
+		for(var i=0;i<frame.hands.length;i++){
+			this.hands[i]={
+				x:this.realx(frame.hands[i].palmPosition[0]),
+				y:this.realy(frame.hands[i].palmPosition[1])
+			}
+		}
+	},
+	fingerup:function(frame){
+		for(var i=0;i<frame.fingers.length;i++){
+			this.fingers[i]={
+				x:this.realx(frame.fingers[i].tipPosition[0]),
+				y:this.realy(frame.fingers[i].tipPosition[1])
+			}
+		}
+	},
+	realx:function(x){
+		return (this.w/2*this.scalefactor*x)+this.w/2;
+	},
+	realy:function(y){
+		return this.offsety+this.h-(this.h*(y/300));
+		
+	},
+	bind:function(event,callback){
+		if (!handlers[event]) handlers[event] = {};
+		var hd = handlers[event];
+		
+		if (!hd[this[0]]) hd[this[0]] = [];
+			hd[this[0]].push(callback); 
+		return this;
+	},
+	unbind:function(event){
+		if (handlers[event]) delete handlers[event];
+		return this;
+	},
+	trigger:function(event, data){
+		if(handlers[event] && handlers[event][this[0]]){
+			var callbacks = handlers[event][this[0]];
+			for (var i=0; i < callbacks.length; i++) {
+    			callbacks[i].call(this, data);
+			}
+		}
+		return this;
+	},
+	isInside:function(x,y,xx,yy,w,h){
+		
+		if(x>xx&&x<(xx+w)&&y>yy&&y<(yy+h)){
+			return true;
+		}
+	},
+	position:function(arr){
+		if(!arr.getBoundingClientRect){
+			for(var q in arr){
+				this.position(arr[q]);
+			}
+		}else{
+			for(var a in this.hands){
+				
+				var prevpos=$(arr).data('hand'+a)||false;
+				if(this.isInside(this.hands[a].x,this.hands[a].y,arr.getBoundingClientRect().left,arr.getBoundingClientRect().top,arr.getBoundingClientRect().width,arr.getBoundingClientRect().height)){
+					$(arr).data('hand'+a,true);
+				}else{
+					$(arr).data('hand'+a,false);
+				}
+				if($(arr).attr('fill')=='blue'){
+				if(!prevpos&&$(arr).data('hand'+a)){
+					$(arr).trigger('handenter',{p:pointer});
+				}else if(prevpos&&!$(arr).data('hand'+a)){
+					$(arr).trigger('handout',{p:pointer});
+				}else if(prevpos&&$(arr).data('hand'+a)){
+					$(arr).trigger('handin',{p:pointer});
+				}
+				}
+			}
+			
+			for(var a in this.fingers){
+				
+			}
+		}
+	}
+}
+	function rnd_spot(svg,obj){
+			svg.change(obj,{'transform':'translate('+Math.max(100,Math.min(Math.random()*$(window).width(),$(window).width()-200))+','+Math.max(100,Math.min(Math.random()*$(window).height(),$(window).height()/2))+')'})
+	}
+	
+	
+$(function(){
+	previousTimestamp=new Date().getTime();
+	var DPS=60;
+	var svg = $('body').svg().svg('get');
+
+//HEADER
+var header={}
+header.spot0=svg.circle(0,0,50, {fill:'#CACACA'})
+header.spot1=svg.circle(0,0,50, {fill:'#CACACA'})
+//header.circle=svg.circle(200, 0, 50, {fill: 'red'})
+//BODY	
+var bodi={}
+bodi.spot=svg.group({'transform':'translate(150,78)'})
+bodi.rect2=svg.rect(bodi.spot,0, 0, 100, 100, {fill: 'blue'})
+bodi.buffer=svg.rect(bodi.spot,0, 0, 100, 0, {fill: 'black'})
+
+var COM=[header,bodi];
+
+rnd_spot(svg,header.spot);
+Leap.loop( function(frame,done){
+	pointer.init(frame);
+	//$( window.location ).trigger("change",{pointer:pointer});
+	
+	for(var a in pointer.hands){
+		svg.change(header['spot'+a],{cx:pointer.hands[a].x,cy:pointer.hands[a].y});
+	}
+	if(((new Date().getTime()-previousTimestamp)/1000)>1/DPS){
+		pointer.position(COM);
+		previousTimestamp=new Date().getTime();
+	}
+	if(pointer.hands[0]){
+		//console.log(pointer.hands[0].x);
+		//rnd_spot(svg,spot)
+	
+	//console.log(header.circle.getBoundingClientRect());
+	}
+	//$('g').prop('cx',pointer.hands[0].x);
+	done();
+});
+$(bodi.rect2).on('handenter',function(e,data){
+	height=0;
+	prevtime=new Date().getTime();
+	
+});
+$(bodi.rect2).on('handin',function(e,data){
+
+	if((new Date().getTime()-prevtime)/10>0.5&&height<=100){
+		height+=2
+		//svg.change(this,{fill:randomcolor()});
+		svg.change(bodi.buffer,{height:height});
+		prevtime=new Date().getTime();
+	}else if(height>100){
+		rnd_spot(svg,bodi.spot)
+		
+	}
+});
+$(bodi.rect2).on('handout',function(e,data){
+	svg.change(bodi.buffer,{height:0});
+	height=0;
+});
+
+});
+function randomcolor(){
+	var arr=['red','green','blue','gray','black','orange'];
+	return arr[Math.floor(Math.random()*7)];
+}
+</script>
+</body>
+</html>
